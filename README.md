@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="AutoQuote.png" alt="Fluxo do AutoQuote no n8n" width="100%">
+  <img src="AutoQuote.PNG" alt="Fluxo do AutoQuote no n8n" width="100%">
 </p>
 
 ---
