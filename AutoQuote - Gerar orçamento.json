@@ -1,0 +1,1046 @@
+{
+  "name": "AutoQuote - Gerar orçamento",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "SUBSTITUA_PELO_ID_DA_PLANILHA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Respostas_Formulario"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "53b3b041-cb0e-4e9b-9553-3cbf4ba05a86",
+      "name": "Nova solicitação"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "SUBSTITUA_PELO_ID_DA_PLANILHA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 867068905,
+          "mode": "list",
+          "cachedResultName": "Tabela_Precos"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        0
+      ],
+      "id": "9412669b-708b-47d9-8bee-5ef9c36610a5",
+      "name": "Buscar regras de preço",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "content": "\n\n\n\n\n\n\n## Captura os dados da planilha de orçamento",
+        "height": 224,
+        "width": 432,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -48,
+        -48
+      ],
+      "typeVersion": 1,
+      "id": "11ca0ba0-fe74-493f-969b-b7b20bd3b274",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ==========================================================\n// AUTOQUOTE — CÁLCULO DOS ORÇAMENTOS\n// Modo: Run Once for All Items\n// ==========================================================\n\n// Solicitações vindas do node que lê Respostas_Formulario\nconst pedidos = $('Nova solicitação')\n\t.all()\n\t.map(item => item.json);\n\n// Os 47 itens que entram neste Code são as regras da Tabela_Precos\nconst regras = $input\n\t.all()\n\t.map(item => item.json);\n\n// ----------------------------------------------------------\n// FUNÇÕES AUXILIARES\n// ----------------------------------------------------------\n\nfunction texto(valor) {\n\treturn String(valor ?? '').trim();\n}\n\nfunction normalizar(valor) {\n\treturn texto(valor)\n\t\t.normalize('NFD')\n\t\t.replace(/[\\u0300-\\u036f]/g, '')\n\t\t.toLowerCase();\n}\n\nfunction numero(valor, padrao = 0) {\n\tif (typeof valor === 'number') {\n\t\treturn Number.isFinite(valor) ? valor : padrao;\n\t}\n\n\tlet valorLimpo = String(valor ?? '').trim();\n\n\tif (!valorLimpo) {\n\t\treturn padrao;\n\t}\n\n\t// Remove R$, espaços, %, letras e outros caracteres\n\tvalorLimpo = valorLimpo.replace(/[^\\d,.\\-]/g, '');\n\n\tconst possuiVirgula = valorLimpo.includes(',');\n\tconst possuiPonto = valorLimpo.includes('.');\n\n\t// Exemplo: 1.234,56\n\tif (possuiVirgula && possuiPonto) {\n\t\tif (\n\t\t\tvalorLimpo.lastIndexOf(',') >\n\t\t\tvalorLimpo.lastIndexOf('.')\n\t\t) {\n\t\t\tvalorLimpo = valorLimpo\n\t\t\t\t.replace(/\\./g, '')\n\t\t\t\t.replace(',', '.');\n\t\t} else {\n\t\t\t// Exemplo: 1,234.56\n\t\t\tvalorLimpo = valorLimpo.replace(/,/g, '');\n\t\t}\n\t} else if (possuiVirgula) {\n\t\t// Exemplo: 1,90\n\t\tvalorLimpo = valorLimpo.replace(',', '.');\n\t}\n\n\tconst convertido = Number(valorLimpo);\n\n\treturn Number.isFinite(convertido)\n\t\t? convertido\n\t\t: padrao;\n}\n\nfunction percentual(valor, padrao = 0) {\n\tconst textoOriginal = String(valor ?? '').trim();\n\tconst valorConvertido = numero(valor, padrao);\n\n\t// \"15%\" vira 0.15\n\tif (textoOriginal.includes('%')) {\n\t\treturn valorConvertido / 100;\n\t}\n\n\t// \"0,15\" continua 0.15\n\treturn valorConvertido;\n}\n\nfunction ativo(valor) {\n\tif (valor === true || valor === 1) {\n\t\treturn true;\n\t}\n\n\treturn ['true', 'sim', 'yes', '1'].includes(normalizar(valor));\n}\n\nfunction arredondar(valor) {\n\treturn Math.round((valor + Number.EPSILON) * 100) / 100;\n}\n\nfunction calcularArea(dimensoes) {\n\tconst numeros = texto(dimensoes)\n\t\t.replace(/,/g, '.')\n\t\t.match(/\\d+(?:\\.\\d+)?/g);\n\n\tif (!numeros || numeros.length < 2) {\n\t\treturn null;\n\t}\n\n\tconst largura = Number(numeros[0]);\n\tconst altura = Number(numeros[1]);\n\n\tif (\n\t\t!Number.isFinite(largura) ||\n\t\t!Number.isFinite(altura) ||\n\t\tlargura <= 0 ||\n\t\taltura <= 0\n\t) {\n\t\treturn null;\n\t}\n\n\treturn largura * altura;\n}\n\nfunction dataFormatoISO(data) {\n\treturn data.toISOString().slice(0, 10);\n}\n\nfunction resultadoRevisao(pedido, motivos) {\n\treturn {\n\t\tjson: {\n\t\t\tid_orcamento: texto(pedido.id_solicitacao)\n\t\t\t\t.replace(/^AQ-/i, 'ORC-'),\n\n\t\t\tid_solicitacao: texto(pedido.id_solicitacao),\n\t\t\tdata_processamento: new Date().toISOString(),\n\t\t\tnome_empresa: texto(pedido.nome_empresa),\n\t\t\ttipo_embalagem: texto(pedido.tipo_embalagem),\n\t\t\tmaterial: texto(pedido.material),\n\t\t\tdimensoes: texto(pedido.dimensoes),\n\t\t\tquantidade: numero(pedido.quantidade),\n\t\t\tnumero_cores: numero(pedido.numero_cores),\n\t\t\tprazo_dias: numero(pedido.prazo_dias),\n\n\t\t\tcodigo_regra_preco: '',\n\t\t\tpreco_base_unitario: '',\n\t\t\tadicional_cores_unitario: '',\n\t\t\tadicional_acabamento_unitario: '',\n\t\t\tsetup: '',\n\t\t\tpercentual_urgencia: '',\n\t\t\tsubtotal: '',\n\t\t\tvalor_total: '',\n\n\t\t\tstatus: 'REVISAO',\n\t\t\tmotivo_revisao: motivos.join('; '),\n\t\t\tvalidade_ate: '',\n\t\t\tlink_pdf: '',\n\t\t},\n\t};\n}\n\n// ----------------------------------------------------------\n// SEPARAÇÃO DAS REGRAS\n// ----------------------------------------------------------\n\nconst regrasAtivas = regras.filter(regra => {\n\tconst valorAtivo = normalizar(regra.ativo);\n\n\t// Se a coluna ativo não existir ou estiver vazia,\n\t// considera a regra como ativa.\n\tif (valorAtivo === '') {\n\t\treturn true;\n\t}\n\n\t// Somente valores explicitamente negativos desativam a regra.\n\treturn ![\n\t\t'false',\n\t\t'falso',\n\t\t'nao',\n\t\t'não',\n\t\t'0',\n\t\t'inativo',\n\t].includes(valorAtivo);\n});\n\nconst regrasPrecoBase = regrasAtivas.filter(\n\tregra => normalizar(regra.categoria) === 'preco_base'\n);\n\nconst regrasAcabamento = regrasAtivas.filter(\n\tregra => normalizar(regra.categoria) === 'acabamento'\n);\n\nconst regrasUrgencia = regrasAtivas\n\t.filter(regra => normalizar(regra.categoria) === 'urgencia')\n\t.sort(\n\t\t(a, b) =>\n\t\t\tnumero(a.prazo_max_dias, 999999) -\n\t\t\tnumero(b.prazo_max_dias, 999999)\n\t);\n\nconst parametros = regrasAtivas.filter(\n\tregra => normalizar(regra.categoria) === 'parametro'\n);\n\nfunction buscarParametro(nome, padrao) {\n\tconst regra = parametros.find(\n\t\titem => normalizar(item.parametro) === normalizar(nome)\n\t);\n\n\treturn regra ? regra.valor_parametro : padrao;\n}\n\nconst quantidadeMinima = numero(\n\tbuscarParametro('quantidade_minima', 500),\n\t500\n);\n\nconst validadeDias = numero(\n\tbuscarParametro('validade_dias', 10),\n\t10\n);\n\n// ----------------------------------------------------------\n// PROCESSAMENTO DOS PEDIDOS\n// ----------------------------------------------------------\n\nreturn pedidos.map(pedido => {\n\tconst idSolicitacao = texto(pedido.id_solicitacao);\n\tconst nomeEmpresa = texto(pedido.nome_empresa);\n\tconst tipoEmbalagem = texto(pedido.tipo_embalagem);\n\tconst material = texto(pedido.material);\n\tconst dimensoes = texto(pedido.dimensoes);\n\tconst quantidade = numero(pedido.quantidade);\n\tconst numeroCores = numero(pedido.numero_cores);\n\tconst prazoDias = numero(pedido.prazo_dias);\n\tconst observacoes = texto(pedido.observacoes);\n\n\tconst motivos = [];\n\n\tif (!idSolicitacao) {\n\t\tmotivos.push('ID da solicitação ausente');\n\t}\n\n\tif (!nomeEmpresa) {\n\t\tmotivos.push('Nome da empresa ausente');\n\t}\n\n\tif (!tipoEmbalagem) {\n\t\tmotivos.push('Tipo de embalagem ausente');\n\t}\n\n\tif (!material) {\n\t\tmotivos.push('Material ausente');\n\t}\n\n\tif (!dimensoes) {\n\t\tmotivos.push('Dimensões ausentes');\n\t}\n\n\tif (!quantidade || quantidade < quantidadeMinima) {\n\t\tmotivos.push(\n\t\t\t`Quantidade inválida ou inferior ao mínimo de ${quantidadeMinima}`\n\t\t);\n\t}\n\n\tif (!numeroCores || numeroCores < 1) {\n\t\tmotivos.push('Número de cores inválido');\n\t}\n\n\tif (!prazoDias || prazoDias < 1) {\n\t\tmotivos.push('Prazo inválido');\n\t}\n\n\tconst area = calcularArea(dimensoes);\n\n\tif (dimensoes && area === null) {\n\t\tmotivos.push('Formato das dimensões inválido');\n\t}\n\n\tif (motivos.length > 0) {\n\t\treturn resultadoRevisao(pedido, motivos);\n\t}\n\n\t// ------------------------------------------------------\n\t// BUSCAR REGRA DE PREÇO\n\t// ------------------------------------------------------\n\n\tconst regraPreco = regrasPrecoBase.find(regra => {\n\t\tconst mesmoTipo =\n\t\t\tnormalizar(regra.tipo_embalagem) ===\n\t\t\tnormalizar(tipoEmbalagem);\n\n\t\tconst mesmoMaterial =\n\t\t\tnormalizar(regra.material) === normalizar(material);\n\n\t\tconst dentroDaArea =\n\t\t\tarea >= numero(regra.area_min_cm2) &&\n\t\t\tarea <= numero(regra.area_max_cm2, 999999);\n\n\t\tconst dentroDaQuantidade =\n\t\t\tquantidade >= numero(regra.quantidade_min) &&\n\t\t\tquantidade <= numero(regra.quantidade_max, 999999);\n\n\t\treturn (\n\t\t\tmesmoTipo &&\n\t\t\tmesmoMaterial &&\n\t\t\tdentroDaArea &&\n\t\t\tdentroDaQuantidade\n\t\t);\n\t});\n\n\tif (!regraPreco) {\n\t\treturn resultadoRevisao(pedido, [\n\t\t\t`Regra de preço não encontrada para ${tipoEmbalagem}, ${material}, área ${area} cm² e quantidade ${quantidade}`,\n\t\t]);\n\t}\n\n\t// ------------------------------------------------------\n\t// ACABAMENTO\n\t// ------------------------------------------------------\n\n\tconst acabamentosEncontrados = regrasAcabamento.filter(regra => {\n\t\tconst termo = normalizar(regra.termo_observacao);\n\n\t\treturn (\n\t\t\ttermo &&\n\t\t\tnormalizar(observacoes).includes(termo)\n\t\t);\n\t});\n\n\tconst adicionalAcabamentoUnitario =\n\t\tacabamentosEncontrados.reduce(\n\t\t\t(total, regra) =>\n\t\t\t\ttotal +\n\t\t\t\tnumero(regra.adicional_acabamento_unitario),\n\t\t\t0\n\t\t);\n\n\t// ------------------------------------------------------\n\t// URGÊNCIA\n\t// ------------------------------------------------------\n\n\tconst regraUrgencia = regrasUrgencia.find(\n\t\tregra => prazoDias <= numero(regra.prazo_max_dias, 999999)\n\t);\n\n\tconst percentualUrgencia = regraUrgencia\n\t? percentual(regraUrgencia.percentual_urgencia)\n\t: 0;\n\n\t// ------------------------------------------------------\n\t// CÁLCULOS\n\t// ------------------------------------------------------\n\n\tconst precoBaseUnitario = numero(\n\t\tregraPreco.preco_base_unitario\n\t);\n\n\tconst adicionalCorExtraTabela = numero(\n\t\tregraPreco.adicional_cor_extra_unitario\n\t);\n\n\tconst quantidadeCoresExtras = Math.max(numeroCores - 1, 0);\n\n\tconst adicionalCoresUnitario =\n\t\tquantidadeCoresExtras * adicionalCorExtraTabela;\n\n\tconst setup = numero(regraPreco.setup_pedido);\n\n\tconst valorUnitario =\n\t\tprecoBaseUnitario +\n\t\tadicionalCoresUnitario +\n\t\tadicionalAcabamentoUnitario;\n\n\tconst subtotal = arredondar(\n\t\tvalorUnitario * quantidade + setup\n\t);\n\n\tconst valorTotal = arredondar(\n\t\tsubtotal * (1 + percentualUrgencia)\n\t);\n\n\tconst validade = new Date();\n\tvalidade.setDate(validade.getDate() + validadeDias);\n\n\treturn {\n\t\tjson: {\n\t\t\tid_orcamento: idSolicitacao.replace(/^AQ-/i, 'ORC-'),\n\t\t\tid_solicitacao: idSolicitacao,\n\t\t\tdata_processamento: new Date().toISOString(),\n\t\t\tnome_empresa: nomeEmpresa,\n\t\t\ttipo_embalagem: tipoEmbalagem,\n\t\t\tmaterial,\n\t\t\tdimensoes,\n\t\t\tquantidade,\n\t\t\tnumero_cores: numeroCores,\n\t\t\tprazo_dias: prazoDias,\n\n\t\t\tcodigo_regra_preco: texto(regraPreco.codigo_regra),\n\t\t\tpreco_base_unitario: arredondar(precoBaseUnitario),\n\t\t\tadicional_cores_unitario: arredondar(\n\t\t\t\tadicionalCoresUnitario\n\t\t\t),\n\t\t\tadicional_acabamento_unitario: arredondar(\n\t\t\t\tadicionalAcabamentoUnitario\n\t\t\t),\n\t\t\tsetup: arredondar(setup),\n\t\t\tpercentual_urgencia: percentualUrgencia,\n\t\t\tsubtotal,\n\t\t\tvalor_total: valorTotal,\n\n\t\t\tstatus: 'CALCULADO',\n\t\t\tmotivo_revisao: '',\n\t\t\tvalidade_ate: dataFormatoISO(validade),\n\t\t\tlink_pdf: '',\n\t\t},\n\t};\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        0
+      ],
+      "id": "263b72b2-c550-4ac0-8206-4855a924080a",
+      "name": "Calcular orçamentos"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "SUBSTITUA_PELO_ID_DA_PLANILHA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 506982532,
+          "mode": "list",
+          "cachedResultName": "Orcamentos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_solicitacao": "={{ $json.id_solicitacao }}",
+            "id_orcamento": "={{ $json.id_orcamento }}",
+            "data_processamento": "={{ $json.data_processamento }}",
+            "nome_empresa": "={{ $json.nome_empresa }}",
+            "tipo_embalagem": "={{ $json.tipo_embalagem }}",
+            "material": "={{ $json.material }}",
+            "dimensoes": "={{ $json.dimensoes }}",
+            "quantidade": "={{ $json.quantidade }}",
+            "numero_cores": "={{ $json.numero_cores }}",
+            "prazo_dias": "={{ $json.prazo_dias }}",
+            "codigo_regra_preco": "={{ $json.codigo_regra_preco }}",
+            "preco_base_unitario": "={{ $json.preco_base_unitario }}",
+            "adicional_cores_unitario": "={{ $json.adicional_cores_unitario }}",
+            "adicional_acabamento_unitario": "={{ $json.adicional_acabamento_unitario }}",
+            "setup": "={{ $json.setup }}",
+            "percentual_urgencia": "={{ $json.percentual_urgencia }}",
+            "subtotal": "={{ $json.subtotal }}",
+            "valor_total": "={{ $json.valor_total }}",
+            "status": "={{ $json.status }}",
+            "motivo_revisao": "={{ $json.motivo_revisao }}",
+            "validade_ate": "={{ $json.validade_ate }}",
+            "link_pdf": "={{ $json.link_pdf }}"
+          },
+          "matchingColumns": [
+            "id_solicitacao"
+          ],
+          "schema": [
+            {
+              "id": "id_orcamento",
+              "displayName": "id_orcamento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "id_solicitacao",
+              "displayName": "id_solicitacao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "data_processamento",
+              "displayName": "data_processamento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nome_empresa",
+              "displayName": "nome_empresa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tipo_embalagem",
+              "displayName": "tipo_embalagem",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "material",
+              "displayName": "material",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dimensoes",
+              "displayName": "dimensoes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "quantidade",
+              "displayName": "quantidade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "numero_cores",
+              "displayName": "numero_cores",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "prazo_dias",
+              "displayName": "prazo_dias",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "codigo_regra_preco",
+              "displayName": "codigo_regra_preco",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "preco_base_unitario",
+              "displayName": "preco_base_unitario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "adicional_cores_unitario",
+              "displayName": "adicional_cores_unitario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "adicional_acabamento_unitario",
+              "displayName": "adicional_acabamento_unitario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "setup",
+              "displayName": "setup",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "percentual_urgencia",
+              "displayName": "percentual_urgencia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subtotal",
+              "displayName": "subtotal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "valor_total",
+              "displayName": "valor_total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "motivo_revisao",
+              "displayName": "motivo_revisao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "validade_ate",
+              "displayName": "validade_ate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "link_pdf",
+              "displayName": "link_pdf",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        672,
+        0
+      ],
+      "id": "9cd54870-cc3c-416c-8039-a4242fc72d4b",
+      "name": "Salvar orçamentos"
+    },
+    {
+      "parameters": {
+        "content": "\n\n\n\n\n\n\n## Calculo de orçamento",
+        "height": 224,
+        "width": 656
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        384,
+        -48
+      ],
+      "typeVersion": 1,
+      "id": "76bfbf74-4049-4443-b268-14e96f667855",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "operation": "copy",
+        "fileId": {
+          "__rl": true,
+          "value": "SUBSTITUA_PELO_ID_DO_MODELO_GOOGLE_DOCS",
+          "mode": "id"
+        },
+        "name": "=Orçamento - {{ $json.id_orcamento }} - {{ $json.nome_empresa }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        -96
+      ],
+      "id": "99dfc129-2da5-4e00-b5d3-dbb72580fa77",
+      "name": "Copiar modelo de orçamento"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentURL": "={{ 'https://docs.google.com/document/d/' + $json.id + '/edit' }}",
+        "actionsUi": {
+          "actionFields": [
+            {
+              "action": "replaceAll",
+              "text": "{{ID_ORCAMENTO}}",
+              "replaceText": "={{ $('Verificar status').item.json.id_orcamento }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{NOME_EMPRESA}}",
+              "replaceText": "={{ $('Verificar status').item.json.nome_empresa }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{CODIGO_REGRA}}",
+              "replaceText": "={{ $('Verificar status').item.json.codigo_regra_preco }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{DATA_PROCESSAMENTO}}",
+              "replaceText": "={{ $('Verificar status').item.json.data_processamento.split('T')[0].split('-').reverse().join('/') }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{VALIDADE_ATE}}",
+              "replaceText": "={{ $('Verificar status').item.json.validade_ate.split('-').reverse().join('/') }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{TIPO_EMBALAGEM}}",
+              "replaceText": "={{ $('Verificar status').item.json.tipo_embalagem }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{MATERIAL}}",
+              "replaceText": "={{ $('Verificar status').item.json.material }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{DIMENSOES}}",
+              "replaceText": "={{ $('Verificar status').item.json.dimensoes }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{QUANTIDADE}}",
+              "replaceText": "={{ String($('Verificar status').item.json.quantidade) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{NUMERO_CORES}}",
+              "replaceText": "={{ String($('Verificar status').item.json.numero_cores) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{PRAZO_DIAS}}",
+              "replaceText": "={{ String($('Verificar status').item.json.prazo_dias) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{PRECO_BASE_UNITARIO}}",
+              "replaceText": "={{ Number($('Verificar status').item.json.preco_base_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{ADICIONAL_CORES}}",
+              "replaceText": "={{ Number($('Verificar status').item.json.adicional_cores_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{ADICIONAL_ACABAMENTO}}",
+              "replaceText": "={{ Number($('Verificar status').item.json.adicional_acabamento_unitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{SETUP}}",
+              "replaceText": "={{ Number($('Verificar status').item.json.setup).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{SUBTOTAL}}",
+              "replaceText": "={{ Number($('Verificar status').item.json.subtotal).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{VALOR_TOTAL}}",
+              "replaceText": "={{ Number($('Verificar status').item.json.valor_total).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) }}"
+            },
+            {
+              "action": "replaceAll",
+              "text": "{{PERCENTUAL_URGENCIA}}",
+              "replaceText": "={{ (Number($('Verificar status').item.json.percentual_urgencia) * 100).toFixed(0) + '%' }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [
+        1344,
+        -96
+      ],
+      "id": "5d81b38f-0dc2-45b6-8c13-ee2090dcaace",
+      "name": "Preencher orçamento"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "9ba5bbeb-3f59-485b-8d48-4a394a1da87e",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "CALCULADO",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        896,
+        0
+      ],
+      "id": "336f8df2-2e3a-47e1-8c74-fc26956c37b4",
+      "name": "Verificar status"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Copiar modelo de orçamento').item.json.id }}",
+          "mode": "id"
+        },
+        "options": {
+          "binaryPropertyName": "data",
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "application/pdf"
+            }
+          },
+          "fileName": "={{ 'Orçamento - ' + $('Verificar status').item.json.id_orcamento + ' - ' + $('Verificar status').item.json.nome_empresa + '.pdf' }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1568,
+        -96
+      ],
+      "id": "a493d39d-8c93-4f97-a7cd-fe0d2cda2c2f",
+      "name": "Gerar PDF"
+    },
+    {
+      "parameters": {
+        "name": "={{ 'Orçamento - ' + $('Verificar status').item.json.id_orcamento + ' - ' + $('Verificar status').item.json.nome_empresa + '.pdf' }}",
+        "driveId": {
+          "__rl": true,
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "SUBSTITUA_PELO_ID_DA_PASTA_NO_DRIVE",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        1792,
+        -96
+      ],
+      "id": "4c4fd18f-4412-4987-8b0d-9b75b2c69614",
+      "name": "Salvar PDF no Drive"
+    },
+    {
+      "parameters": {
+        "operation": "share",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Salvar PDF no Drive').item.json.id }}",
+          "mode": "id"
+        },
+        "permissionsUi": {
+          "permissionsValues": {
+            "role": "reader",
+            "type": "anyone"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        2016,
+        -96
+      ],
+      "id": "d45e2610-7349-4b0a-973f-b9b987a2b9aa",
+      "name": "Compartilhar PDF"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "SUBSTITUA_PELO_ID_DA_PLANILHA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 506982532,
+          "mode": "list",
+          "cachedResultName": "Orcamentos"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id_solicitacao": "={{ String($('Verificar status').item.json.id_solicitacao) }}",
+            "link_pdf": "={{ 'https://drive.google.com/file/d/' + $('Salvar PDF no Drive').item.json.id + '/view' }}",
+            "status": "FINALIZADO"
+          },
+          "matchingColumns": [
+            "id_solicitacao"
+          ],
+          "schema": [
+            {
+              "id": "id_orcamento",
+              "displayName": "id_orcamento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "id_solicitacao",
+              "displayName": "id_solicitacao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "data_processamento",
+              "displayName": "data_processamento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "nome_empresa",
+              "displayName": "nome_empresa",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "tipo_embalagem",
+              "displayName": "tipo_embalagem",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "material",
+              "displayName": "material",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "dimensoes",
+              "displayName": "dimensoes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "quantidade",
+              "displayName": "quantidade",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "numero_cores",
+              "displayName": "numero_cores",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "prazo_dias",
+              "displayName": "prazo_dias",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "codigo_regra_preco",
+              "displayName": "codigo_regra_preco",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "preco_base_unitario",
+              "displayName": "preco_base_unitario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "adicional_cores_unitario",
+              "displayName": "adicional_cores_unitario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "adicional_acabamento_unitario",
+              "displayName": "adicional_acabamento_unitario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "setup",
+              "displayName": "setup",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "percentual_urgencia",
+              "displayName": "percentual_urgencia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "subtotal",
+              "displayName": "subtotal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "valor_total",
+              "displayName": "valor_total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "motivo_revisao",
+              "displayName": "motivo_revisao",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "validade_ate",
+              "displayName": "validade_ate",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "link_pdf",
+              "displayName": "link_pdf",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2240,
+        -96
+      ],
+      "id": "9b60f92c-46ce-4925-af23-1020850686c5",
+      "name": "Atualizar link do PDF"
+    },
+    {
+      "parameters": {
+        "sendTo": "seu-email@exemplo.com",
+        "subject": "={{ '[AutoQuote] Revisão necessária - ' + $json.id_solicitacao }}",
+        "message": "=<strong>Um orçamento não pôde ser calculado automaticamente.</strong><br>\n<br>\nSolicitação: {{ $json.id_solicitacao }}<br>\nEmpresa: {{ $json.nome_empresa }}<br>\nTipo de embalagem: {{ $json.tipo_embalagem }}<br>\nMaterial: {{ $json.material || 'Não informado' }}<br>\nDimensões: {{ $json.dimensoes || 'Não informadas' }}<br>\nQuantidade: {{ $json.quantidade }}<br>\nNúmero de cores: {{ $json.numero_cores }}<br>\nPrazo: {{ $json.prazo_dias }} dias<br>\n<br>\nMotivo da revisão:\n{{ $json.motivo_revisao }}<br>\n<br>\nAcesse a planilha AutoQuote para corrigir ou analisar a solicitação.",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        96
+      ],
+      "id": "52aedb2b-8724-4b5b-a6a3-a449721a9cb2",
+      "name": "Enviar alerta de revisão",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Tratamento de arquivos e geração do PDF\n",
+        "height": 256,
+        "width": 1376,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1040,
+        -176
+      ],
+      "typeVersion": 1,
+      "id": "25bb5bf8-69c1-4fd1-8fd8-5ced628b5214",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "\n\n\n\n\n\n\n## Revisão",
+        "height": 224,
+        "width": 256,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        1040,
+        80
+      ],
+      "typeVersion": 1,
+      "id": "dd42f97a-aa40-450c-9b01-2d0e2eca2eca",
+      "name": "Sticky Note3"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Nova solicitação": {
+      "main": [
+        [
+          {
+            "node": "Buscar regras de preço",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar regras de preço": {
+      "main": [
+        [
+          {
+            "node": "Calcular orçamentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calcular orçamentos": {
+      "main": [
+        [
+          {
+            "node": "Salvar orçamentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar orçamentos": {
+      "main": [
+        [
+          {
+            "node": "Verificar status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Copiar modelo de orçamento": {
+      "main": [
+        [
+          {
+            "node": "Preencher orçamento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verificar status": {
+      "main": [
+        [
+          {
+            "node": "Copiar modelo de orçamento",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Enviar alerta de revisão",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preencher orçamento": {
+      "main": [
+        [
+          {
+            "node": "Gerar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gerar PDF": {
+      "main": [
+        [
+          {
+            "node": "Salvar PDF no Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salvar PDF no Drive": {
+      "main": [
+        [
+          {
+            "node": "Compartilhar PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compartilhar PDF": {
+      "main": [
+        [
+          {
+            "node": "Atualizar link do PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "nodeGroups": []
+}
