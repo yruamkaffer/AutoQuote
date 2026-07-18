@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <img src="./docs/fluxo-autoquote.png" alt="Fluxo do AutoQuote no n8n" width="100%">
+  <img src="AutoQuote.png" alt="Fluxo do AutoQuote no n8n" width="100%">
 </p>
 
 ---
@@ -235,7 +235,7 @@ O n8n cria uma cópia do documento para cada orçamento e executa ações de bus
 O workflow público e sanitizado está disponível em:
 
 ```text
-workflow/autoquote-workflow-publico.json
+AutoQuote - Gerar orçamento.json
 ```
 
 ### Pré-requisitos
@@ -353,32 +353,6 @@ O workflow publicado foi sanitizado e utiliza placeholders para os recursos exte
 - O alerta de revisão está preparado, porém pode permanecer desativado até a configuração do Gmail.
 - Não existe autenticação ou portal do cliente.
 - O workflow local depende da máquina estar ligada; para operação contínua, o n8n precisa ser hospedado.
-
-## Próximas evoluções
-
-- Envio automático do PDF ao cliente.
-- Aprovação manual antes do envio.
-- Dashboard de orçamentos e conversão em vendas.
-- Histórico de alterações nas regras de preço.
-- Banco de dados em PostgreSQL ou Supabase.
-- Interface web para gestão das solicitações.
-- Identificação de clientes recorrentes.
-- Geração de número sequencial com controle transacional.
-- Testes automatizados para as regras de cálculo.
-- Logs estruturados e monitoramento de falhas.
-- Exclusão ou arquivamento das cópias intermediárias do Google Docs.
-- Hospedagem do n8n para execução 24 horas por dia.
-
-## Estrutura do repositório
-
-```text
-AutoQuote/
-├── README.md
-├── docs/
-│   └── fluxo-autoquote.png
-└── workflow/
-    └── autoquote-workflow-publico.json
-```
 
 ## Status
 
